@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import ecosystem from '../ecosystem.config.js';
 
 // For toggling SEO display and more, see the config.json file.
@@ -23,6 +23,14 @@ const serverUrl = ((base) => {
   }
   base.port =
     ecosystemConfig[config.production ? 'env_production' : 'env'].PORT;
+  // if SSL is requested by environment or certs exist, prefer https and SSL port
+  const sslKeyPath = process.env.SSL_KEY || new URL('../certs/localhost-key.pem', import.meta.url).pathname;
+  const sslCertPath = process.env.SSL_CERT || new URL('../certs/localhost-cert.pem', import.meta.url).pathname;
+  const useHttps = (process.env.SSL === 'true') || (existsSync(sslKeyPath) && existsSync(sslCertPath));
+  if (useHttps) {
+    base.protocol = 'https:';
+    base.port = process.env.SSL_PORT || base.port;
+  }
   base.pathname =
     (config.pathname || '/').replace(/\/+$|[^\w\/\.-]+/g, '') + '/';
   return Object.freeze(base);

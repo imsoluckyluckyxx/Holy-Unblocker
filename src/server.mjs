@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
-import { createServer } from 'node:http';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { readFileSync, existsSync } from 'node:fs';
 import { server as wisp, logging } from "@mercuryworkshop/wisp-js/server";
 import createRammerhead from '../lib/rammerhead/src/server/index.js';
 import fastifyHelmet from '@fastify/helmet';
@@ -82,8 +84,27 @@ const rammerheadSession = new RegExp(
     rh.emit('upgrade', req, socket, head);
   };
 
+// Detect SSL options from environment or local certs for HTTPS support
+const sslKeyPath = process.env.SSL_KEY || new URL('../certs/localhost-key.pem', import.meta.url).pathname;
+const sslCertPath = process.env.SSL_CERT || new URL('../certs/localhost-cert.pem', import.meta.url).pathname;
+const useHttps = (process.env.SSL === 'true') || (existsSync(sslKeyPath) && existsSync(sslCertPath));
+let sslOptions = null;
+if (useHttps) {
+  try {
+    sslOptions = {
+      key: readFileSync(sslKeyPath),
+      cert: readFileSync(sslCertPath),
+    };
+    console.log('HTTPS enabled using certs:', sslKeyPath, sslCertPath);
+  } catch (e) {
+    console.warn('Failed to read SSL certs, falling back to HTTP:', e.message);
+    sslOptions = null;
+  }
+}
+
 // Create a server factory for Rammerhead and Wisp
 const serverFactory = (handler) => {
+  const createServer = (sslOptions && useHttps) ? (h) => createHttpsServer(sslOptions, h) : (h) => createHttpServer(h);
   return createServer()
     .on('request', (req, res) => {
       if (shouldRouteRh(req)) routeRhRequest(req, res);
